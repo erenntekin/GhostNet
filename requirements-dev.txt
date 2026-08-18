@@ -1,0 +1,10 @@
+# Only needed to run the test suite (pytest tests/) -- kept out of the
+# root requirements.txt for the same reason ml/requirements.txt is split
+# out: the api container doesn't need test tooling for anything it does
+# at runtime.
+pytest==9.1.1
+httpx==0.28.1
+
+# tests/test_api.py talks to the real Postgres instance (same host-side
+# localhost access as storage/setup_postgres.py -- see .env.example), so
+# `docker compose up postgres` must be running first.

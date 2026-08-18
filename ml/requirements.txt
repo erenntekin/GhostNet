@@ -1,0 +1,19 @@
+# Only needed to run ml/train_reoffense_model.py (host-side, manual, like
+# storage/setup_postgres.py). Deliberately kept out of the root
+# requirements.txt: the api and live-replay containers share that file and
+# don't need scikit-learn's weight for anything they do, the trained
+# model is scored inside the Spark container (see streaming/Dockerfile).
+#
+# Pinned to match streaming/Dockerfile's versions exactly, not just
+# "recent" versions. joblib's pickle-based serialization is not guaranteed
+# compatible across scikit-learn/numpy versions -- training with a newer
+# scikit-learn than the Spark container has (Python 3.8 base image caps it
+# at 1.3.2) produces a model file that fails to even deserialize there
+# (numpy's internal module layout changed between 1.24 and later releases).
+# Confirmed by testing: loading a 1.9.0-trained model under 1.3.2 raised
+# `ModuleNotFoundError: No module named 'numpy._core'`, not just a
+# compatibility warning.
+scikit-learn==1.3.2
+joblib==1.4.2
+pandas==2.0.3
+numpy==1.24.4

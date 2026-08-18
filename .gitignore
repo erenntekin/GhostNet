@@ -1,0 +1,11 @@
+.venv/
+.venv-ml/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+logs/
+streaming/_checkpoints/

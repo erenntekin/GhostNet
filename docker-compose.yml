@@ -1,0 +1,185 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ghostnet-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ghostnet
+      POSTGRES_PASSWORD: ghostnet
+      POSTGRES_DB: ghostnet
+    volumes:
+      - ghostnet-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostnet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: ghostnet-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:19092,CONTROLLER://kafka:19093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    volumes:
+      - ghostnet-kafka-data:/tmp/kafka-logs
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ghostnet-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8081:8080"   # interface web Kafka UI (note : 8081 cote PC, Spark occupe deja le 8080)
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ghostnet
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+    depends_on:
+      - kafka
+
+  # Runs the actual streaming job directly (--master local[*]) rather than
+  # standing up a separate Master/Worker cluster: threat_processor.py never
+  # connects to spark://spark-master:7077 in the first place, so a
+  # spark-worker container was pure overhead that did nothing. This also
+  # replaces the old workflow of manually `docker exec`-ing spark-submit
+  # after every restart -- the job now starts automatically with the rest
+  # of the stack.
+  spark-master:
+    build: ./streaming
+    container_name: ghostnet-spark-master
+    restart: unless-stopped
+    working_dir: /opt/ghostnet
+    command: >
+      /opt/spark/bin/spark-submit
+      --master local[*]
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3
+      streaming/threat_processor.py
+    ports:
+      - "8080:8080"   # Spark's own driver UI (job progress, not a cluster master UI anymore)
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=postgres
+    volumes:
+      - ./streaming:/opt/ghostnet/streaming
+      - ./ml:/opt/ghostnet/ml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  api:
+    build: .
+    container_name: ghostnet-api
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+    command: ["python", "-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    # Bind-mounted (not baked into the image) so code changes only need
+    # `docker compose restart api`, not a rebuild -- matches streaming/ and
+    # dashboard/ below. No --reload flag: this repo lives on OneDrive-synced
+    # storage, and uvicorn's file-watcher was unreliable against that even
+    # on the host, before Docker was involved -- a manual restart is more
+    # predictable here than a flaky auto-reload.
+    volumes:
+      - ./api:/app/api
+      - ./ml:/app/ml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  live-replay:
+    build: .
+    container_name: ghostnet-live-replay
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+    command: ["python", "-u", "ingestion/live_replay.py"]
+    volumes:
+      - ./ingestion:/app/ingestion
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  # The only producer that feeds threats.raw, the topic threat_processor.py
+  # (Spark) actually reads from. live-replay above is a visual demo layer
+  # that writes straight to threats.enriched, bypassing Spark's real
+  # transform/enrichment/ML-scoring entirely -- without this service running,
+  # the Spark job (and the reoffense-risk model inside it) never sees a
+  # single new row, `docker compose up -d` alone would look "live" on the
+  # map while the actual streaming pipeline sat idle underneath it.
+  continuous-producer:
+    build: .
+    container_name: ghostnet-continuous-producer
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+    command: ["python", "-u", "ingestion/continuous_loop.py"]
+    volumes:
+      - ./ingestion:/app/ingestion
+    depends_on:
+      kafka:
+        condition: service_started
+
+  # blocklist.de + CINS + Emerging Threats, previously only ever run by
+  # hand once, so those three sources were frozen at whatever they looked
+  # like on that day while AbuseIPDB kept flowing. Now genuinely continuous,
+  # same as continuous-producer above.
+  secondary-sources-producer:
+    build: .
+    container_name: ghostnet-secondary-sources-producer
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:19092
+      - POSTGRES_HOST=postgres
+    command: ["python", "-u", "ingestion/blocklist_de_producer.py"]
+    volumes:
+      - ./ingestion:/app/ingestion
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  dashboard:
+    build: ./dashboard
+    container_name: ghostnet-dashboard
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  ghostnet-postgres-data:
+  ghostnet-kafka-data:
