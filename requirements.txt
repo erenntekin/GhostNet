@@ -1,0 +1,12 @@
+requests==2.34.2
+python-dotenv==1.2.2
+kafka-python==3.0.10
+psycopg2-binary==2.9.12
+fastapi==0.141.1
+uvicorn==0.52.1
+websockets==17.0.1
+
+# Legacy: only needed if re-running storage/setup_snowflake.py for
+# historical reference, not used by the live pipeline (see .env's note on
+# why the project moved to Postgres).
+# snowflake-connector-python==4.7.2
