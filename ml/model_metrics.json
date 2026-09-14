@@ -1,0 +1,106 @@
+{
+  "trained_on_rows": 24566,
+  "positive_rate": 0.3678,
+  "train_rows": 19652,
+  "test_rows": 4914,
+  "production_model": "random_forest",
+  "models": {
+    "logistic_regression": {
+      "accuracy": 0.5773300773300774,
+      "precision": 0.4590909090909091,
+      "recall": 0.8384061981184283,
+      "f1": 0.5933033091834737,
+      "roc_auc": 0.6860571902459216,
+      "confusion_matrix": [
+        [
+          1322,
+          1785
+        ],
+        [
+          292,
+          1515
+        ]
+      ]
+    },
+    "random_forest": {
+      "accuracy": 0.561050061050061,
+      "precision": 0.45285560344827586,
+      "recall": 0.9302711676812396,
+      "f1": 0.6091683275955789,
+      "roc_auc": 0.6892677138524876,
+      "confusion_matrix": [
+        [
+          1076,
+          2031
+        ],
+        [
+          126,
+          1681
+        ]
+      ]
+    }
+  },
+  "feature_importance": [
+    {
+      "feature": "cat__source_abuseipdb",
+      "importance": 0.2248
+    },
+    {
+      "feature": "remainder__abuse_confidence_score",
+      "importance": 0.1875
+    },
+    {
+      "feature": "cat__category_UNKNOWN",
+      "importance": 0.111
+    },
+    {
+      "feature": "cat__risk_level_critical",
+      "importance": 0.0831
+    },
+    {
+      "feature": "cat__risk_level_high",
+      "importance": 0.0647
+    },
+    {
+      "feature": "cat__category_Exploited Host",
+      "importance": 0.0478
+    },
+    {
+      "feature": "cat__source_blocklistde",
+      "importance": 0.0423
+    },
+    {
+      "feature": "cat__country_bucket_US",
+      "importance": 0.0328
+    },
+    {
+      "feature": "cat__country_bucket_JP",
+      "importance": 0.0285
+    },
+    {
+      "feature": "cat__country_bucket_OTHER",
+      "importance": 0.0273
+    },
+    {
+      "feature": "cat__category_Brute-Force",
+      "importance": 0.0206
+    },
+    {
+      "feature": "cat__country_bucket_GB",
+      "importance": 0.0205
+    },
+    {
+      "feature": "cat__source_cinsscore",
+      "importance": 0.0202
+    },
+    {
+      "feature": "cat__country_bucket_NL",
+      "importance": 0.0133
+    },
+    {
+      "feature": "cat__country_bucket_CN",
+      "importance": 0.0133
+    }
+  ],
+  "methodology": "Features come only from each IP's first sighting (source, country, initial score, category, risk level) -- nothing derived from later occurrences, so the model can't see the answer before predicting it. The label is whether that IP was ever flagged again afterward."
+}
